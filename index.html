@@ -3,7 +3,9 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Face-focused Photo Cropper (BlazeFace) with Bounding Boxes</title>
+		<title>
+			Face-focused Photo Cropper (BlazeFace) with Synchronized Bounding Boxes
+		</title>
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@latest"></script>
 		<style>
@@ -39,7 +41,7 @@
 		</style>
 	</head>
 	<body>
-		<h1>Face-focused Photo Cropper with Bounding Boxes</h1>
+		<h1>Face-focused Photo Cropper with Synchronized Bounding Boxes</h1>
 		<input type="file" id="fileInput" accept="image/*" />
 		<button id="uploadButton" disabled>Upload Photo</button>
 		<div id="status">Loading face detection model...</div>
@@ -54,6 +56,7 @@
 
 		<script>
 			let model
+			const TARGET_FACE_PERCENT = 0.8
 
 			async function loadModel() {
 				try {
@@ -77,66 +80,73 @@
 				return null
 			}
 
-			function drawBoundingBoxes(img, face, cropBox) {
-				const canvas = document.getElementById("originalImageCanvas")
-				const ctx = canvas.getContext("2d")
-
-				// Set canvas size to match the image
-				canvas.width = img.width
-				canvas.height = img.height
-
-				// Draw the original image
-				ctx.drawImage(img, 0, 0, img.width, img.height)
-
-				// Draw face bounding box
-				ctx.strokeStyle = "blue"
-				ctx.lineWidth = 3
-				ctx.strokeRect(
-					face.topLeft[0],
-					face.topLeft[1],
-					face.bottomRight[0] - face.topLeft[0],
-					face.bottomRight[1] - face.topLeft[1],
-				)
-
-				// Draw crop bounding box
-				ctx.strokeStyle = "green"
-				ctx.lineWidth = 3
-				ctx.strokeRect(cropBox.x, cropBox.y, cropBox.size, cropBox.size)
-			}
-
-			function cropImage(img, face, targetFacePercent = 0.6) {
-				const canvas = document.createElement("canvas")
-				const ctx = canvas.getContext("2d")
-
+			function calculateCropArea(face, imgWidth, imgHeight) {
 				const faceWidth = face.bottomRight[0] - face.topLeft[0]
 				const faceHeight = face.bottomRight[1] - face.topLeft[1]
 				const faceCenterX = (face.topLeft[0] + face.bottomRight[0]) / 2
 				const faceCenterY = (face.topLeft[1] + face.bottomRight[1]) / 2
 
-				const cropSize = Math.max(faceWidth, faceHeight) / targetFacePercent
+				const cropSize = Math.max(faceWidth, faceHeight) / TARGET_FACE_PERCENT
 
-				canvas.width = cropSize
-				canvas.height = cropSize
+				let sourceX = faceCenterX - cropSize / 2
+				let sourceY = faceCenterY - cropSize / 2
 
-				const sourceX = faceCenterX - cropSize / 2
-				const sourceY = faceCenterY - cropSize / 2
+				// Adjust if crop area goes outside the image
+				sourceX = Math.max(0, Math.min(sourceX, imgWidth - cropSize))
+				sourceY = Math.max(0, Math.min(sourceY, imgHeight - cropSize))
+
+				return { sourceX, sourceY, cropSize }
+			}
+
+			function drawBoundingBoxes(img, face, cropArea) {
+				const canvas = document.getElementById("originalImageCanvas")
+				const ctx = canvas.getContext("2d")
+
+				canvas.width = img.width
+				canvas.height = img.height
+
+				ctx.drawImage(img, 0, 0, img.width, img.height)
+
+				// Draw crop bounding box (green)
+				ctx.strokeStyle = "green"
+				ctx.lineWidth = 3
+				ctx.strokeRect(
+					cropArea.sourceX,
+					cropArea.sourceY,
+					cropArea.cropSize,
+					cropArea.cropSize,
+				)
+
+				// Draw face bounding box (blue)
+				const faceSize = cropArea.cropSize * TARGET_FACE_PERCENT
+				const faceX = cropArea.sourceX + (cropArea.cropSize - faceSize) / 2
+				const faceY = cropArea.sourceY + (cropArea.cropSize - faceSize) / 2
+
+				ctx.strokeStyle = "blue"
+				ctx.lineWidth = 3
+				ctx.strokeRect(faceX, faceY, faceSize, faceSize)
+			}
+
+			function cropImage(img, cropArea) {
+				const canvas = document.createElement("canvas")
+				const ctx = canvas.getContext("2d")
+
+				canvas.width = cropArea.cropSize
+				canvas.height = cropArea.cropSize
 
 				ctx.drawImage(
 					img,
-					sourceX,
-					sourceY,
-					cropSize,
-					cropSize,
+					cropArea.sourceX,
+					cropArea.sourceY,
+					cropArea.cropSize,
+					cropArea.cropSize,
 					0,
 					0,
-					cropSize,
-					cropSize,
+					cropArea.cropSize,
+					cropArea.cropSize,
 				)
 
-				return {
-					dataUrl: canvas.toDataURL(),
-					cropBox: { x: sourceX, y: sourceY, size: cropSize },
-				}
+				return canvas.toDataURL()
 			}
 
 			document.addEventListener("DOMContentLoaded", () => {
@@ -157,11 +167,10 @@
 						const img = new Image()
 						img.onload = async () => {
 							const face = await detectFace(img)
-							console.log(face)
 							if (face) {
-								const { dataUrl, cropBox } = cropImage(img, face)
-								croppedImage.src = dataUrl
-								drawBoundingBoxes(img, face, cropBox)
+								const cropArea = calculateCropArea(face, img.width, img.height)
+								drawBoundingBoxes(img, face, cropArea)
+								croppedImage.src = cropImage(img, cropArea)
 								statusElement.textContent = "Image processed successfully."
 							} else {
 								statusElement.textContent = "No face detected in the image."
