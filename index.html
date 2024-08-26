@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Face Detection and Cropping</title>
+		<style>
+			html,
+			body {
+				height: 100vh;
+				width: 100vw;
+				margin: 0;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				flex-direction: column;
+			}
+
+			#loading {
+				display: none;
+				font-size: 18px;
+				color: #555;
+			}
+
+			#image-container {
+				width: 50vw;
+				height: 50vw;
+				border: 1px solid #ccc;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				overflow: hidden;
+			}
+
+			canvas {
+				width: 100%;
+				height: 100%;
+				display: none;
+			}
+		</style>
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@latest"></script>
+	</head>
+
+	<body>
+		<input type="file" id="upload" />
+		<p id="loading">Processing image, please wait...</p>
+		<div id="image-container">
+			<canvas id="canvas"></canvas>
+		</div>
+
+		<script>
+			const upload = document.getElementById("upload")
+			const canvas = document.getElementById("canvas")
+			const ctx = canvas.getContext("2d")
+			const loading = document.getElementById("loading")
+			const imageContainer = document.getElementById("image-container")
+
+			upload.addEventListener("change", async event => {
+				// Show loading state
+				loading.style.display = "block"
+				canvas.style.display = "none"
+
+				const file = event.target.files[0]
+				const img = new Image()
+				img.src = URL.createObjectURL(file)
+
+				img.onload = async () => {
+					canvas.width = img.width
+					canvas.height = img.height
+					ctx.drawImage(img, 0, 0)
+
+					// Load face detection model
+					const model = await blazeface.load()
+
+					// Perform face detection
+					const predictions = await model.estimateFaces(canvas, false)
+					console.log(predictions)
+
+					if (predictions.length > 0) {
+						const face = predictions[0]
+						const { topLeft, bottomRight } = face
+						const faceWidth = bottomRight[0] - topLeft[0]
+						const faceHeight = bottomRight[1] - topLeft[1]
+
+						// Calculate the center of the face
+						const faceCenterX = (topLeft[0] + bottomRight[0]) / 2
+						const faceCenterY = (topLeft[1] + bottomRight[1]) / 2
+
+						// Calculate crop size such that face occupies 60% of the square
+						const faceSize = Math.max(faceWidth, faceHeight)
+						const cropSize = faceSize / 0.6 // Ensure the face occupies 60% of the square
+
+						// Calculate the top-left corner of the crop area to center the face
+						const cropX = Math.max(0, faceCenterX - cropSize / 2)
+						const cropY = Math.max(0, faceCenterY - cropSize / 2)
+
+						// Ensure the crop area stays within the image boundaries
+						const cropXAdjusted = Math.min(cropX, img.width - cropSize)
+						const cropYAdjusted = Math.min(cropY, img.height - cropSize)
+
+						// Crop the image
+						const croppedImage = ctx.getImageData(
+							cropXAdjusted,
+							cropYAdjusted,
+							cropSize,
+							cropSize,
+						)
+
+						// Resize the canvas to the square dimensions
+						canvas.width = cropSize
+						canvas.height = cropSize
+						ctx.putImageData(croppedImage, 0, 0)
+
+						// Adjust canvas to fit within container
+						canvas.style.width = "100%"
+						canvas.style.height = "100%"
+
+						// Hide loading state and show the canvas
+						loading.style.display = "none"
+						canvas.style.display = "block"
+					} else {
+						// Hide loading state if no face is detected
+						loading.textContent =
+							"No face detected. Please upload another image."
+					}
+				}
+			})
+		</script>
+	</body>
+</html>
