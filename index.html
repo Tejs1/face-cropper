@@ -3,9 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>
-			Face-focused Photo Cropper (BlazeFace) with Synchronized Bounding Boxes
-		</title>
+		<title>Face-focused Photo Cropper with Model Detection Visualization</title>
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@latest"></script>
 		<style>
@@ -41,7 +39,7 @@
 		</style>
 	</head>
 	<body>
-		<h1>Face-focused Photo Cropper with Synchronized Bounding Boxes</h1>
+		<h1>Face-focused Photo Cropper with Model Detection Visualization</h1>
 		<input type="file" id="fileInput" accept="image/*" />
 		<button id="uploadButton" disabled>Upload Photo</button>
 		<div id="status">Loading face detection model...</div>
@@ -56,8 +54,8 @@
 
 		<script>
 			let model
-			const TARGET_FACE_PERCENT = 0.7 // Slightly reduced to allow for more context
-			const PADDING_PERCENT = 0.1 // Add 10% padding around the face
+			const TARGET_FACE_PERCENT = 0.7
+			const PADDING_PERCENT = 0.1
 
 			async function loadModel() {
 				try {
@@ -87,16 +85,13 @@
 				const faceCenterX = (face.topLeft[0] + face.bottomRight[0]) / 2
 				const faceCenterY = (face.topLeft[1] + face.bottomRight[1]) / 2
 
-				// Calculate crop size based on the larger dimension of the face
 				const baseCropSize =
 					Math.max(faceWidth, faceHeight) / TARGET_FACE_PERCENT
-				const cropSize = baseCropSize * (1 + PADDING_PERCENT) // Add padding
+				const cropSize = baseCropSize * (1 + PADDING_PERCENT)
 
-				// Calculate crop coordinates, ensuring the face is centered
 				let sourceX = faceCenterX - cropSize / 2
 				let sourceY = faceCenterY - cropSize / 2
 
-				// Adjust if crop area goes outside the image
 				sourceX = Math.max(0, Math.min(sourceX, imgWidth - cropSize))
 				sourceY = Math.max(0, Math.min(sourceY, imgHeight - cropSize))
 
@@ -122,7 +117,7 @@
 					cropArea.cropSize,
 				)
 
-				// Draw face bounding box (blue)
+				// Draw adjusted face bounding box (blue)
 				const faceSize = cropArea.cropSize * TARGET_FACE_PERCENT
 				const faceX = cropArea.sourceX + (cropArea.cropSize - faceSize) / 2
 				const faceY = cropArea.sourceY + (cropArea.cropSize - faceSize) / 2
@@ -130,6 +125,16 @@
 				ctx.strokeStyle = "blue"
 				ctx.lineWidth = 3
 				ctx.strokeRect(faceX, faceY, faceSize, faceSize)
+
+				// Draw model-detected face bounding box (red)
+				ctx.strokeStyle = "red"
+				ctx.lineWidth = 2
+				ctx.strokeRect(
+					face.topLeft[0],
+					face.topLeft[1],
+					face.bottomRight[0] - face.topLeft[0],
+					face.bottomRight[1] - face.topLeft[1],
+				)
 			}
 
 			function cropImage(img, cropArea) {
