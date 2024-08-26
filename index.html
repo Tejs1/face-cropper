@@ -56,7 +56,8 @@
 
 		<script>
 			let model
-			const TARGET_FACE_PERCENT = 0.8
+			const TARGET_FACE_PERCENT = 0.7 // Slightly reduced to allow for more context
+			const PADDING_PERCENT = 0.1 // Add 10% padding around the face
 
 			async function loadModel() {
 				try {
@@ -86,8 +87,12 @@
 				const faceCenterX = (face.topLeft[0] + face.bottomRight[0]) / 2
 				const faceCenterY = (face.topLeft[1] + face.bottomRight[1]) / 2
 
-				const cropSize = Math.max(faceWidth, faceHeight) / TARGET_FACE_PERCENT
+				// Calculate crop size based on the larger dimension of the face
+				const baseCropSize =
+					Math.max(faceWidth, faceHeight) / TARGET_FACE_PERCENT
+				const cropSize = baseCropSize * (1 + PADDING_PERCENT) // Add padding
 
+				// Calculate crop coordinates, ensuring the face is centered
 				let sourceX = faceCenterX - cropSize / 2
 				let sourceY = faceCenterY - cropSize / 2
 
