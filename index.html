@@ -3,128 +3,142 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Face Detection and Cropping</title>
-		<style>
-			html,
-			body {
-				height: 100vh;
-				width: 100vw;
-				margin: 0;
-				display: flex;
-				justify-content: center;
-				align-items: center;
-				flex-direction: column;
-			}
-
-			#loading {
-				display: none;
-				font-size: 18px;
-				color: #555;
-			}
-
-			#image-container {
-				width: 50vw;
-				height: 50vw;
-				border: 1px solid #ccc;
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				overflow: hidden;
-			}
-
-			canvas {
-				width: 100%;
-				height: 100%;
-				display: none;
-			}
-		</style>
+		<title>Face-focused Photo Cropper (BlazeFace)</title>
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@latest"></script>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			#fileInput {
+				display: none;
+			}
+			#uploadButton {
+				padding: 10px 20px;
+				background-color: #4caf50;
+				color: white;
+				border: none;
+				cursor: pointer;
+			}
+			#originalImage,
+			#croppedImage {
+				max-width: 100%;
+				height: auto;
+				margin-top: 20px;
+			}
+			#status {
+				color: #666;
+				margin-top: 10px;
+			}
+		</style>
 	</head>
-
 	<body>
-		<input type="file" id="upload" />
-		<p id="loading">Processing image, please wait...</p>
-		<div id="image-container">
-			<canvas id="canvas"></canvas>
+		<h1>Face-focused Photo Cropper (BlazeFace)</h1>
+		<input type="file" id="fileInput" accept="image/*" />
+		<button id="uploadButton" disabled>Upload Photo</button>
+		<div id="status">Loading face detection model...</div>
+		<div>
+			<h2>Original Image:</h2>
+			<img id="originalImage" alt="Original image" />
+		</div>
+		<div>
+			<h2>Cropped Image:</h2>
+			<img id="croppedImage" alt="Cropped image" />
 		</div>
 
 		<script>
-			const upload = document.getElementById("upload")
-			const canvas = document.getElementById("canvas")
-			const ctx = canvas.getContext("2d")
-			const loading = document.getElementById("loading")
-			const imageContainer = document.getElementById("image-container")
+			let model
 
-			upload.addEventListener("change", async event => {
-				// Show loading state
-				loading.style.display = "block"
-				canvas.style.display = "none"
-
-				const file = event.target.files[0]
-				const img = new Image()
-				img.src = URL.createObjectURL(file)
-
-				img.onload = async () => {
-					canvas.width = img.width
-					canvas.height = img.height
-					ctx.drawImage(img, 0, 0)
-
-					// Load face detection model
-					const model = await blazeface.load()
-
-					// Perform face detection
-					const predictions = await model.estimateFaces(canvas, false)
-					console.log(predictions)
-
-					if (predictions.length > 0) {
-						const face = predictions[0]
-						const { topLeft, bottomRight } = face
-						const faceWidth = bottomRight[0] - topLeft[0]
-						const faceHeight = bottomRight[1] - topLeft[1]
-
-						// Calculate the center of the face
-						const faceCenterX = (topLeft[0] + bottomRight[0]) / 2
-						const faceCenterY = (topLeft[1] + bottomRight[1]) / 2
-
-						// Calculate crop size such that face occupies 60% of the square
-						const faceSize = Math.max(faceWidth, faceHeight)
-						const cropSize = faceSize / 0.6 // Ensure the face occupies 60% of the square
-
-						// Calculate the top-left corner of the crop area to center the face
-						const cropX = Math.max(0, faceCenterX - cropSize / 2)
-						const cropY = Math.max(0, faceCenterY - cropSize / 2)
-
-						// Ensure the crop area stays within the image boundaries
-						const cropXAdjusted = Math.min(cropX, img.width - cropSize)
-						const cropYAdjusted = Math.min(cropY, img.height - cropSize)
-
-						// Crop the image
-						const croppedImage = ctx.getImageData(
-							cropXAdjusted,
-							cropYAdjusted,
-							cropSize,
-							cropSize,
-						)
-
-						// Resize the canvas to the square dimensions
-						canvas.width = cropSize
-						canvas.height = cropSize
-						ctx.putImageData(croppedImage, 0, 0)
-
-						// Adjust canvas to fit within container
-						canvas.style.width = "100%"
-						canvas.style.height = "100%"
-
-						// Hide loading state and show the canvas
-						loading.style.display = "none"
-						canvas.style.display = "block"
-					} else {
-						// Hide loading state if no face is detected
-						loading.textContent =
-							"No face detected. Please upload another image."
-					}
+			async function loadModel() {
+				try {
+					model = await blazeface.load()
+					document.getElementById("status").textContent =
+						"Face detection model loaded. Ready to process images."
+					document.getElementById("uploadButton").disabled = false
+				} catch (error) {
+					console.error("Error loading BlazeFace model:", error)
+					document.getElementById(
+						"status",
+					).textContent = `Error loading model: ${error.message}. Please reload the page.`
 				}
+			}
+
+			async function detectFace(img) {
+				const predictions = await model.estimateFaces(img, false)
+				if (predictions.length > 0) {
+					return predictions[0]
+				}
+				return null
+			}
+
+			function cropImage(img, face, targetFacePercent = 0.6) {
+				const canvas = document.createElement("canvas")
+				const ctx = canvas.getContext("2d")
+
+				const faceWidth = face.bottomRight[0] - face.topLeft[0]
+				const faceHeight = face.bottomRight[1] - face.topLeft[1]
+				const faceCenterX = (face.topLeft[0] + face.bottomRight[0]) / 2
+				const faceCenterY = (face.topLeft[1] + face.bottomRight[1]) / 2
+
+				const cropSize = Math.max(faceWidth, faceHeight) / targetFacePercent
+
+				canvas.width = cropSize
+				canvas.height = cropSize
+
+				const sourceX = faceCenterX - cropSize / 2
+				const sourceY = faceCenterY - cropSize / 2
+
+				ctx.drawImage(
+					img,
+					sourceX,
+					sourceY,
+					cropSize,
+					cropSize,
+					0,
+					0,
+					cropSize,
+					cropSize,
+				)
+
+				return canvas.toDataURL()
+			}
+
+			document.addEventListener("DOMContentLoaded", () => {
+				const fileInput = document.getElementById("fileInput")
+				const uploadButton = document.getElementById("uploadButton")
+				const originalImage = document.getElementById("originalImage")
+				const croppedImage = document.getElementById("croppedImage")
+				const statusElement = document.getElementById("status")
+
+				uploadButton.addEventListener("click", () => fileInput.click())
+
+				loadModel()
+
+				fileInput.addEventListener("change", async e => {
+					const file = e.target.files[0]
+					if (!file) return
+
+					try {
+						const img = new Image()
+						img.onload = async () => {
+							originalImage.src = img.src
+							const face = await detectFace(img)
+							if (face) {
+								croppedImage.src = cropImage(img, face)
+								statusElement.textContent = "Image processed successfully."
+							} else {
+								statusElement.textContent = "No face detected in the image."
+							}
+						}
+						img.src = URL.createObjectURL(file)
+					} catch (error) {
+						console.error("Error processing image:", error)
+						statusElement.textContent = `Error processing image: ${error.message}. Please try again.`
+					}
+				})
 			})
 		</script>
 	</body>
